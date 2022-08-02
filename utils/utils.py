@@ -45,7 +45,7 @@ class MetricContainer:
         return {**self.losses, **self.metric_history}
 
 
-class SegmentationDataset(Dataset):
+class Slide(Dataset):
     def __init__(self, images_root, masks_root, images_names,
                  mode="train", transforms=None):
         self.images_root = images_root
@@ -113,6 +113,7 @@ class ClassifierTrainer:
         else:
             self.scheduler = None
 
+
     def train_batch_step(self, batch):
         X_batch, y_batch = batch
         X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
@@ -140,8 +141,6 @@ class ClassifierTrainer:
         print(f"Device: {self.device}")
         for epoch in range(self.epoch_trained, num_epoch):
             self.model.train()
-            epoch_train_loss = []
-            epoch_test_loss = []
             print("#" * 15)
             print(f"Epoch: {epoch + 1}/{num_epoch}")
             print("Train:")
@@ -201,13 +200,9 @@ class ClassifierTrainer:
         except Exception as e:
             print(e)
 
-    @staticmethod
-    def clear_gpu_memory():
-        gc.collect()
-        torch.cuda.empty_cache()
-
     def train(self):
         self.model.train()
 
     def eval(self):
         self.model.eval()
+
