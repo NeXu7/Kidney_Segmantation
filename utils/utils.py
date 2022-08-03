@@ -1,7 +1,6 @@
-import gc
+from datetime import datetime
 import time
 import os
-from glob import glob
 
 from skimage import io
 import numpy as np
@@ -9,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
+import tifffile as tf
 
 
 class MetricContainer:
@@ -45,34 +45,30 @@ class MetricContainer:
         return {**self.losses, **self.metric_history}
 
 
-class Slide(Dataset):
-    def __init__(self, images_root, masks_root, images_names,
-                 mode="train", transforms=None):
-        self.images_root = images_root
-        if mode == "train":
-            self.mode = mode
-            self.masks_root = masks_root
-        else:
-            self.mode = mode
-        self.images_names = images_names
+class SlideDataset(Dataset):
+    def __init__(self, slide, mask, image_size, iteration_on_slide,
+                 transforms=None):
+        self.slide = tf.imread(slide)
+        self.slide_mask = tf.imread(mask)
+        self.image_size = image_size
+        self.iteration_on_slide = iteration_on_slide
+        self.max_y = self.slide.shape[0] - image_size
+        self.max_x =self.slide.shape[1] - image_size
         if transforms is not None:
             self.transforms = transforms
         else:
             self.transforms = ToTensorV2()
 
     def __len__(self):
-        return len(self.images_names)
+        return self.iteration_on_slide
 
     def __getitem__(self, index):
-        image = io.imread(os.path.join(self.images_root, self.images_names[index]))
-        if self.mode == "train":
-            mask = io.imread(os.path.join(self.masks_root, self.images_names[index]))
-            augmented = self.transforms(image=image, mask=mask)
-            return augmented["image"].float(), augmented["mask"].long()
-        else:
-            augmented = self.transforms(image=image)
-            return augmented['image'].float()
-
+        x = np.random.randint(0, self.max_x)
+        y = np.random.randint(0, self.max_y)
+        image = self.slide[y:y+self.image_size, x:x+self.image_size]
+        mask = self.slide_mask[y:y+self.image_size, x:x+self.image_size]
+        augmented = self.transforms(image=image, mask=mask)
+        return augmented["image"].float(), augmented["mask"].long()
 
 class ClassifierTrainer:
     def __init__(self, model, loss_function, train_dataloader, test_dataloader,
@@ -113,7 +109,6 @@ class ClassifierTrainer:
         else:
             self.scheduler = None
 
-
     def train_batch_step(self, batch):
         X_batch, y_batch = batch
         X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
@@ -132,6 +127,12 @@ class ClassifierTrainer:
         self.metric_container.batch_loss("test", predict_loss.item())
         self.metric_container.batch_metrics(predict, y_batch)
 
+    def set_checkpoint_path(self):
+        path = datetime.now().strftime("%d.%m_%H%M%S")
+        path = os.path.join("train_log", path)
+        os.mkdir(path)
+        self.checkpoint_path = path
+
     def print_score(self):
         for name, metric in self.metric_container.get_stat().items():
             print(f"{name}: {metric[-1]}")
@@ -144,15 +145,13 @@ class ClassifierTrainer:
             print("#" * 15)
             print(f"Epoch: {epoch + 1}/{num_epoch}")
             print("Train:")
-            time.sleep(0.5)
-            for batch in tqdm(self.train_dataloader):
+            for batch in self.train_dataloader:
                 self.train_batch_step(batch)
 
             self.model.eval()
             print("Test:")
-            time.sleep(0.5)
             with torch.no_grad():
-                for batch in tqdm(self.test_dataloader):
+                for batch in self.test_dataloader:
                     self.test_batch_step(batch)
 
             self.metric_container.finish_epoch()

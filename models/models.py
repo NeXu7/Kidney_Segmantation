@@ -2,7 +2,7 @@ from .bricks import *
 import torch.nn as nn
 
 class UNet(nn.Module):
-    def __init__(self, input_channels, num_classes):
+    def __init__(self, input_channels, num_classes, output_size=512):
         super(UNet, self).__init__()
         self.input_channels = input_channels
         self.num_classes = num_classes
@@ -18,7 +18,7 @@ class UNet(nn.Module):
         self.up_2 = UpStream(256, 128)
         self.up_1 = UpStream(128, 64)
 
-        self.predict_map = PredictConv(64, self.num_classes)
+        self.predict_map = PredictConv(64, self.num_classes, output_size)
 
     def forward(self, x):
         x_i = self.input_conv(x)
